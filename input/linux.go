@@ -4,6 +4,7 @@ package input
 
 import (
 	"encoding/binary"
+	"io"
 	"os"
 
 	"gomuxinput/protocol"
@@ -33,35 +34,16 @@ func (r *LinuxReader) Close() error {
 
 // ReadEvent reads a single input event from the device.
 func (r *LinuxReader) ReadEvent() (*protocol.Event, error) {
-	// struct input_event { struct timeval time; unsigned short type, code; int value; };
-	var (
-		sec  int64
-		usec int64
-		typ  uint16
-		code uint16
-		val  int32
-	)
-	// timeval
-	if err := binary.Read(r.f, binary.LittleEndian, &sec); err != nil {
+	const eventSize = 24
+	buf := make([]byte, eventSize)
+	_, err := io.ReadFull(r.f, buf)
+	if err != nil {
 		return nil, err
 	}
-	if err := binary.Read(r.f, binary.LittleEndian, &usec); err != nil {
-		return nil, err
+	ev := &protocol.Event{
+		Type:  binary.LittleEndian.Uint16(buf[16:18]),
+		Code:  binary.LittleEndian.Uint16(buf[18:20]),
+		Value: int32(binary.LittleEndian.Uint32(buf[20:24])),
 	}
-	if err := binary.Read(r.f, binary.LittleEndian, &typ); err != nil {
-		return nil, err
-	}
-	if err := binary.Read(r.f, binary.LittleEndian, &code); err != nil {
-		return nil, err
-	}
-	if err := binary.Read(r.f, binary.LittleEndian, &val); err != nil {
-		return nil, err
-	}
-	// No alignment adjustment is required in this simplified reader. In a
-	// full implementation you may need to account for struct padding.
-
-	ev := &protocol.Event{Type: typ, Code: code, Value: val}
-	_ = sec
-	_ = usec
 	return ev, nil
 }

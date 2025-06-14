@@ -5,6 +5,7 @@ import (
 	"flag"
 	"log"
 	"net"
+	"os"
 	"strings"
 	"sync"
 
@@ -18,36 +19,36 @@ func main() {
 		devPaths = flag.String("dev", "/dev/input/event0", "comma-separated evdev devices")
 	)
 	flag.Parse()
-
 	paths := strings.Split(*devPaths, ",")
 
 	ln, err := net.Listen("tcp", *addr)
 	if err != nil {
 		log.Fatalf("listen: %v", err)
 	}
-	log.Printf("waiting for client on %s", *addr)
+	defer ln.Close()
+
+	log.Printf("Server gestartet, wartet auf Verbindung unter %s", *addr)
 
 	conn, err := ln.Accept()
 	if err != nil {
 		log.Fatalf("accept: %v", err)
 	}
-	defer conn.Close()
-	log.Printf("client connected: %s", conn.RemoteAddr())
+	log.Printf("Client verbunden: %s", conn.RemoteAddr())
 
 	enc := gob.NewEncoder(conn)
-
 	var readers []*input.LinuxReader
+
 	for _, p := range paths {
 		r, err := input.OpenLinuxReader(strings.TrimSpace(p))
 		if err != nil {
 			log.Fatalf("open input %s: %v", p, err)
 		}
 		readers = append(readers, r)
-		defer r.Close()
 	}
 
 	evCh := make(chan *protocol.Event)
 	var wg sync.WaitGroup
+
 	for _, r := range readers {
 		wg.Add(1)
 		go func(rd *input.LinuxReader) {
@@ -55,7 +56,7 @@ func main() {
 			for {
 				ev, err := rd.ReadEvent()
 				if err != nil {
-					log.Printf("read event: %v", err)
+					log.Printf("Reader beendet (%v)", err)
 					return
 				}
 				evCh <- ev
@@ -63,14 +64,24 @@ func main() {
 		}(r)
 	}
 
+	// Encoder-Loop (solange Client da)
 	go func() {
-		wg.Wait()
-		close(evCh)
+		for ev := range evCh {
+			if err := enc.Encode(ev); err != nil {
+				log.Printf("Verbindung verloren: %v", err)
+				break
+			}
+		}
+
+		// Verbindung verloren → evdev Reader schließen → beendet alle Goroutinen
+		for _, r := range readers {
+			_ = r.Close()
+		}
 	}()
 
-	for ev := range evCh {
-		if err := enc.Encode(ev); err != nil {
-			log.Fatalf("encode: %v", err)
-		}
-	}
+	// Warte bis alle Reader-Goroutinen durch sind
+	wg.Wait()
+	log.Println("Alle Reader beendet. Server fährt runter.")
+	conn.Close()
+	os.Exit(0)
 }

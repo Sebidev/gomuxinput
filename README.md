@@ -4,11 +4,33 @@
 
 The server captures input events from evdev devices on Linux and sends them over the network. The client receives these events and injects them into the Windows system using the `SendInput` API.
 
+This tool can be useful for scenarios like controlling a Windows VM or physical PC from a Linux host using native input events.
+
 > ⚠️ This is a minimal working prototype. Full input translation (e.g., modifier state, layout conversion) is not implemented.
 
 ---
 
 ## Usage
+
+---
+
+## Listing Input Devices (Linux)
+
+To list available input devices and identify the correct ones for your keyboard/mouse:
+
+```bash
+ls -l /dev/input/by-id/
+```
+
+You can also inspect device info with:
+
+```bash
+sudo evtest
+```
+
+This will show live event output and help you find the relevant device paths like `/dev/input/event3`.
+
+---
 
 ### Server (Linux)
 The server reads input events from one or more evdev input devices.
